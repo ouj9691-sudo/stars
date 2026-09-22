@@ -4,7 +4,9 @@
       "Bash(npm install *)",
       "Bash(npm run *)",
       "Bash(curl *)",
-      "PowerShell(Get-NetTCPConnection *)"
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }
