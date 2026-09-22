@@ -214,18 +214,21 @@ export class GameScene extends Phaser.Scene {
     return { col, row }
   }
 
-  private getInteraction(col: number, row: number): Interaction | null {
-    // 建筑门
+  /** 完整交互判定（建筑门/NPC/农田），用于玩家朝向的目标格 */
+  private getFullInteraction(col: number, row: number): Interaction | null {
     for (const b of BUILDINGS) {
       if (b.door.col === col && b.door.row === row) {
         return b.id === 'house' ? 'enter-house' : 'enter-shop'
       }
     }
-    // NPC
     for (const n of NPC_DEFS) {
       if (n.col === col && n.row === row) return 'talk'
     }
+    return this.getFarmInteraction(col, row)
+  }
 
+  /** 仅农田操作（锄地/播种/浇水/收获） */
+  private getFarmInteraction(col: number, row: number): Interaction | null {
     const state = store.getState()
     const crop = state.crops.find((c) => c.col === col && c.row === row)
     const tile = state.farmTiles.find((t) => t.col === col && t.row === row)
@@ -249,30 +252,58 @@ export class GameScene extends Phaser.Scene {
     return null
   }
 
+  /** 寻找附近可交互目标：朝向优先，其次最近农田格 */
+  private findInteractTarget(): { col: number; row: number; interaction: Interaction } | null {
+    const pc = Math.floor(this.player.sprite.x / TILE_SIZE)
+    const pr = Math.floor(this.player.sprite.y / TILE_SIZE)
+
+    // 1. 朝向的格子（完整判定，含门/NPC/农田）
+    const facing = this.getTargetTile()
+    const facingInter = this.getFullInteraction(facing.col, facing.row)
+    if (facingInter) return { col: facing.col, row: facing.row, interaction: facingInter }
+
+    // 2. 附近最近的可交互农田格（8 邻域）
+    const neighbors: Array<[number, number]> = [
+      [pc, pr - 1],
+      [pc, pr + 1],
+      [pc - 1, pr],
+      [pc + 1, pr],
+      [pc - 1, pr - 1],
+      [pc + 1, pr - 1],
+      [pc - 1, pr + 1],
+      [pc + 1, pr + 1],
+    ]
+    for (const [c, r] of neighbors) {
+      const inter = this.getFarmInteraction(c, r)
+      if (inter) return { col: c, row: r, interaction: inter }
+    }
+    return null
+  }
+
   private updateHint(): void {
     if (store.isUIOpen()) {
       this.hintText.setText('')
       return
     }
-    const target = this.getTargetTile()
+    const target = this.findInteractTarget()
     let text = ''
-    const inter = this.getInteraction(target.col, target.row)
-    if (inter === 'plant') {
-      const cropType = SEED_TO_CROP[store.getState().selectedItem]
-      if (cropType) text = `按 E 播种${CROP_DEFS[cropType].name}`
-    } else if (inter) {
-      text = INTERACTION_TEXT[inter]
+    if (target) {
+      if (target.interaction === 'plant') {
+        const cropType = SEED_TO_CROP[store.getState().selectedItem]
+        if (cropType) text = `按 E 播种${CROP_DEFS[cropType].name}`
+      } else {
+        text = INTERACTION_TEXT[target.interaction]
+      }
     }
     this.hintText.setText(text)
     this.hintText.setPosition(this.player.sprite.x, this.player.sprite.y - 30)
   }
 
   private doInteract(): void {
-    const target = this.getTargetTile()
-    const inter = this.getInteraction(target.col, target.row)
-    if (!inter) return
+    const target = this.findInteractTarget()
+    if (!target) return
 
-    const { col, row } = target
+    const { col, row, interaction: inter } = target
     switch (inter) {
       case 'till':
         store.till(col, row)

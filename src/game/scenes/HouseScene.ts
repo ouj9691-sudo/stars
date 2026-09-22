@@ -220,25 +220,49 @@ export class HouseScene extends Phaser.Scene {
     return null
   }
 
+  /** 寻找附近可交互目标：朝向优先，其次最近出口/床 */
+  private findInteractTarget(): { col: number; row: number; interaction: HouseInteraction } | null {
+    const pc = Math.floor(this.player.sprite.x / TILE_SIZE)
+    const pr = Math.floor(this.player.sprite.y / TILE_SIZE)
+
+    const facing = this.getTargetTile()
+    const facingInter = this.getInteraction(facing.col, facing.row)
+    if (facingInter) return { col: facing.col, row: facing.row, interaction: facingInter }
+
+    const neighbors: Array<[number, number]> = [
+      [pc, pr - 1],
+      [pc, pr + 1],
+      [pc - 1, pr],
+      [pc + 1, pr],
+      [pc - 1, pr - 1],
+      [pc + 1, pr - 1],
+      [pc - 1, pr + 1],
+      [pc + 1, pr + 1],
+    ]
+    for (const [c, r] of neighbors) {
+      const inter = this.getInteraction(c, r)
+      if (inter) return { col: c, row: r, interaction: inter }
+    }
+    return null
+  }
+
   private updateHint(): void {
     if (store.isUIOpen()) {
       this.hintText.setText('')
       return
     }
-    const target = this.getTargetTile()
-    const inter = this.getInteraction(target.col, target.row)
-    this.hintText.setText(inter ? INTERACTION_TEXT[inter] : '')
+    const target = this.findInteractTarget()
+    this.hintText.setText(target ? INTERACTION_TEXT[target.interaction] : '')
     this.hintText.setPosition(this.player.sprite.x, this.player.sprite.y - 30)
   }
 
   private doInteract(): void {
-    const target = this.getTargetTile()
-    const inter = this.getInteraction(target.col, target.row)
-    if (!inter) return
+    const target = this.findInteractTarget()
+    if (!target) return
 
-    if (inter === 'sleep') {
+    if (target.interaction === 'sleep') {
       this.startSleep()
-    } else if (inter === 'exit-house') {
+    } else if (target.interaction === 'exit-house') {
       store.exitHouse()
       this.scene.start('world')
     }
