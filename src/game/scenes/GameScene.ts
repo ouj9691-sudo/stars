@@ -51,6 +51,13 @@ export class GameScene extends Phaser.Scene {
   private overlay!: Phaser.GameObjects.Rectangle
   private unsub: (() => void) | null = null
   private saveAccum = 0
+  private handleKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === 'e' || e.key === 'E') {
+      e.preventDefault()
+      if (store.isUIOpen()) return
+      this.doInteract()
+    }
+  }
 
   constructor() {
     super('world')
@@ -82,9 +89,8 @@ export class GameScene extends Phaser.Scene {
 
     // 交互键用事件驱动，避免场景切换后 JustDown 失效
     const kb = this.input.keyboard!
-    kb.addKey('E', true, false).on('down', () => {
-      if (!store.isUIOpen()) this.doInteract()
-    })
+    // E 键用 window 原生事件，避免场景切换后 Phaser Key 事件失效
+    window.addEventListener('keydown', this.handleKeyDown)
     kb.addKey('ONE', true, false).on('down', () => {
       if (!store.isUIOpen()) store.selectItem(HOTBAR_ITEMS[0])
     })
@@ -182,6 +188,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   shutdown(): void {
+    window.removeEventListener('keydown', this.handleKeyDown)
     if (this.unsub) {
       this.unsub()
       this.unsub = null

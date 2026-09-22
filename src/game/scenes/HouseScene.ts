@@ -32,6 +32,9 @@ const SLEEP_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
   color: '#fffbe6',
 }
 
+// 睡觉状态机阶段
+type SleepPhase = 'idle' | 'walk' | 'fade-out' | 'black' | 'fade-in' | 'wake'
+
 export class HouseScene extends Phaser.Scene {
   private indoor!: IndoorMap
   private player!: Player
@@ -45,6 +48,8 @@ export class HouseScene extends Phaser.Scene {
   private wakeText!: Phaser.GameObjects.Text
   private saveAccum = 0
   private sleeping = false
+  private sleepPhase: SleepPhase = 'idle'
+  private sleepTimer = 0
   private unsub: (() => void) | null = null
 
   constructor() {
@@ -67,12 +72,8 @@ export class HouseScene extends Phaser.Scene {
     this.cursors = this.input.keyboard!.createCursorKeys()
     this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as WasdKeys
 
-    // 交互键用事件驱动，避免场景切换后 JustDown 失效
+    // 交互键用 window 原生事件，避免场景切换后 Phaser Key 事件失效
     const kb = this.input.keyboard!
-    kb.addKey('E', true, false).on('down', () => {
-      if (this.sleeping || store.isUIOpen()) return
-      this.doInteract()
-    })
     kb.addKey('T', true, false).on('down', () => {
       if (this.sleeping || store.isUIOpen()) return
       store.endDay()
@@ -81,6 +82,7 @@ export class HouseScene extends Phaser.Scene {
       if (this.sleeping || store.isUIOpen()) return
       store.openBag()
     })
+    window.addEventListener('keydown', this.handleKeyDown)
 
     // 交互提示
     this.hintText = this.add.text(0, 0, '', {
@@ -145,15 +147,27 @@ export class HouseScene extends Phaser.Scene {
   }
 
   shutdown(): void {
+    window.removeEventListener('keydown', this.handleKeyDown)
     if (this.unsub) {
       this.unsub()
       this.unsub = null
     }
   }
 
+  private handleKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === 'e' || e.key === 'E') {
+      e.preventDefault()
+      if (this.sleeping || store.isUIOpen()) return
+      this.doInteract()
+    }
+  }
+
   update(_time: number, delta: number): void {
-    // 睡觉流程中：禁止移动、交互、提示与昼夜 overlay（由睡觉动画接管）
-    if (this.sleeping) return
+    // 睡觉流程中：由状态机驱动，禁止移动/交互/提示
+    if (this.sleeping) {
+      this.updateSleep(delta)
+      return
+    }
 
     const uiOpen = store.isUIOpen()
 
@@ -268,92 +282,103 @@ export class HouseScene extends Phaser.Scene {
     }
   }
 
-  // ---------- 睡觉流程 ----------
+  // ---------- 睡觉流程（状态机 + delta 累积驱动，不依赖 tween/delayedCall 回调链） ----------
 
   private startSleep(): void {
     if (this.sleeping) return
     this.sleeping = true
+    this.sleepPhase = 'walk'
+    this.sleepTimer = 0
     this.hintText.setText('')
 
-    // 走向床边
+    // 走向床边（tween 仅做视觉移动，流程由状态机定时推进）
     this.tweens.add({
       targets: this.player.sprite,
       x: BED_CENTER_X,
       y: BED_APPROACH_Y,
       duration: 450,
       ease: 'Linear',
-      onComplete: () => this.lieDown(),
     })
+  }
+
+  private updateSleep(delta: number): void {
+    this.sleepTimer += delta
+
+    switch (this.sleepPhase) {
+      case 'walk':
+        if (this.sleepTimer >= 450) {
+          this.lieDown()
+          this.sleepPhase = 'fade-out'
+          this.sleepTimer = 0
+        }
+        break
+      case 'fade-out':
+        this.sleepOverlay.alpha = Math.min(1, this.sleepTimer / 2000)
+        if (this.sleepTimer >= 900) this.goodnightText.setVisible(true)
+        if (this.sleepTimer >= 2000) {
+          this.sleepOverlay.alpha = 1
+          this.goodnightText.setVisible(false)
+          this.advanceDay()
+          this.sleepPhase = 'black'
+          this.sleepTimer = 0
+        }
+        break
+      case 'black':
+        if (this.sleepTimer >= 700) {
+          this.dayText.setVisible(true)
+          this.sleepPhase = 'fade-in'
+          this.sleepTimer = 0
+        }
+        break
+      case 'fade-in':
+        this.sleepOverlay.alpha = Math.max(0, 1 - this.sleepTimer / 1800)
+        if (this.sleepTimer >= 1800) {
+          this.sleepOverlay.alpha = 0
+          this.dayText.setVisible(false)
+          this.sitUp()
+          this.sleepPhase = 'wake'
+          this.sleepTimer = 0
+        }
+        break
+      case 'wake':
+        if (this.sleepTimer >= 450) {
+          this.finishWake()
+          this.sleeping = false
+          this.sleepPhase = 'idle'
+        }
+        break
+    }
   }
 
   private lieDown(): void {
-    // 躺下
     this.player.sprite.setTexture('player-sleep')
     this.player.sprite.setFlipX(false)
     this.player.sprite.setPosition(BED_CENTER_X, BED_LYING_Y)
-
-    // 逐渐变暗（约 2 秒）
-    this.tweens.add({
-      targets: this.sleepOverlay,
-      alpha: 1,
-      duration: 2000,
-      ease: 'Linear',
-      onComplete: () => this.atBlack(),
-    })
-
-    // 变暗中途显示晚安
-    this.time.delayedCall(900, () => {
-      this.goodnightText.setVisible(true)
-    })
   }
 
-  private atBlack(): void {
-    this.goodnightText.setVisible(false)
-
+  private advanceDay(): void {
     // 进入下一天（原地过天，不切换场景）
     store.endDay()
-
     const state = store.getState()
     this.dayText.setText(`Day ${state.day}\n早晨`)
-    this.dayText.setVisible(true)
-
-    // 短暂黑屏停留后清晨亮屏
-    this.time.delayedCall(700, () => {
-      this.tweens.add({
-        targets: this.sleepOverlay,
-        alpha: 0,
-        duration: 1800,
-        ease: 'Linear',
-        onComplete: () => {
-          this.dayText.setVisible(false)
-          this.wakeUp()
-        },
-      })
-    })
   }
 
-  private wakeUp(): void {
-    // 坐起
+  private sitUp(): void {
     this.player.sprite.setTexture('player-sit')
     this.player.sprite.setPosition(BED_CENTER_X, BED_LYING_Y + 16)
+  }
 
-    this.time.delayedCall(450, () => {
-      // 站起并离开床边
-      this.player.sprite.setTexture('player-down-0')
-      this.player.sprite.setFlipX(false)
-      this.player.sprite.setPosition(BED_CENTER_X, BED_APPROACH_Y)
+  private finishWake(): void {
+    this.player.sprite.setTexture('player-down-0')
+    this.player.sprite.setFlipX(false)
+    this.player.sprite.setPosition(BED_CENTER_X, BED_APPROACH_Y)
 
-      // 同步位置到存档
-      store.updatePlayer(this.player.sprite.x, this.player.sprite.y, 'up')
-      store.persist()
+    store.updatePlayer(this.player.sprite.x, this.player.sprite.y, 'up')
+    store.persist()
 
-      // 提示并恢复控制
-      this.wakeText.setVisible(true)
-      this.time.delayedCall(2000, () => {
-        this.wakeText.setVisible(false)
-      })
-
-      this.sleeping = false
+    this.wakeText.setVisible(true)
+    this.time.delayedCall(2000, () => {
+      this.wakeText.setVisible(false)
     })
   }
 }
