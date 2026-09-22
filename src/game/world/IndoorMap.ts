@@ -12,9 +12,10 @@ export const INDOOR_HEIGHT = ROWS * TILE_SIZE
 const BED = { col: 2, row: 2, width: 4, height: 3 }
 
 // 床中心及周边位置（世界坐标，供睡觉流程使用）
-export const BED_CENTER_X = (BED.col + BED.width / 2) * TILE_SIZE
-export const BED_LYING_Y = BED.row * TILE_SIZE + 24
-export const BED_APPROACH_Y = (BED.row + BED.height + 0.5) * TILE_SIZE
+// 床占 col 2-5, row 2-4，即像素 (64,64)-(192,160)
+export const BED_CENTER_X = (BED.col + BED.width / 2) * TILE_SIZE // 128
+export const BED_LYING_Y = (BED.row + BED.height / 2) * TILE_SIZE // 112，床中心（躺在床中央）
+export const BED_APPROACH_Y = (BED.row + BED.height + 0.5) * TILE_SIZE // 176，床下方站立位置
 // 桌子
 const TABLE = { col: 12, row: 3, width: 2, height: 2 }
 // 出口（南墙上的门）
@@ -76,7 +77,6 @@ export class IndoorMap implements CollisionMap {
 
   draw(scene: Phaser.Scene): void {
     const g = scene.add.graphics()
-    g.setDepth(0)
 
     // 木地板
     g.fillStyle(0xc9a06a, 1)
@@ -98,6 +98,11 @@ export class IndoorMap implements CollisionMap {
     this.drawBed(g)
     this.drawTable(g)
     this.drawExit(g)
+
+    // 烘焙成静态纹理，避免每帧重绘大量 Graphics 命令
+    g.generateTexture('indoor-map', INDOOR_WIDTH, INDOOR_HEIGHT)
+    g.destroy()
+    scene.add.image(0, 0, 'indoor-map').setOrigin(0, 0).setDepth(0)
   }
 
   private drawBed(g: Phaser.GameObjects.Graphics): void {

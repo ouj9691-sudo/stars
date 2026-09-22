@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { TILE_SIZE, WORLD_COLS, WORLD_ROWS, BUILDINGS } from '../constants'
+import { TILE_SIZE, WORLD_COLS, WORLD_ROWS, WORLD_WIDTH, WORLD_HEIGHT, BUILDINGS } from '../constants'
 import { MAP_TILES, TileType, isWalkable } from './mapData'
 import type { BuildingDef } from '../types'
 
@@ -41,7 +41,6 @@ export class FarmMap {
 
   draw(scene: Phaser.Scene): void {
     const g = scene.add.graphics()
-    g.setDepth(0)
 
     // 先铺地面
     for (let r = 0; r < WORLD_ROWS; r++) {
@@ -66,6 +65,11 @@ export class FarmMap {
 
     // 最后画建筑（覆盖在草地之上）
     this.drawBuildings(g)
+
+    // 烘焙成静态纹理，避免每帧重绘大量 Graphics 命令
+    g.generateTexture('farm-map', WORLD_WIDTH, WORLD_HEIGHT)
+    g.destroy()
+    scene.add.image(0, 0, 'farm-map').setOrigin(0, 0).setDepth(0)
   }
 
   private baseColor(t: TileType): number {

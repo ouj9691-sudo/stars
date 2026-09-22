@@ -51,9 +51,11 @@ export class GameScene extends Phaser.Scene {
   private overlay!: Phaser.GameObjects.Rectangle
   private unsub: (() => void) | null = null
   private saveAccum = 0
+  private lastFarmVersion = 0
   private handleKeyDown = (e: KeyboardEvent): void => {
     if (e.key === 'e' || e.key === 'E') {
       e.preventDefault()
+      if (!this.scene.isActive()) return
       if (store.isUIOpen()) return
       this.doInteract()
     }
@@ -144,8 +146,14 @@ export class GameScene extends Phaser.Scene {
     )
 
     this.unsub = store.subscribe(() => {
-      this.farmRenderer.render(store.getState())
-      this.cameras.main.setZoom(store.getState().zoom)
+      const farmVersion = store.getFarmVersion()
+      if (farmVersion !== this.lastFarmVersion) {
+        this.lastFarmVersion = farmVersion
+        this.farmRenderer.render(store.getState())
+      }
+      if (this.cameras?.main) {
+        this.cameras.main.setZoom(store.getState().zoom)
+      }
     })
   }
 

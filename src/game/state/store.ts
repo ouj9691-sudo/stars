@@ -69,6 +69,7 @@ class GameStore {
   private state: GameState
   private listeners = new Set<Listener>()
   private version = 0
+  private farmVersion = 0
   private feedbackTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor() {
@@ -106,6 +107,11 @@ class GameStore {
     return this.version
   }
 
+  /** 农田数据版本号，农田/作物变化时 +1（用于按需重绘） */
+  getFarmVersion(): number {
+    return this.farmVersion
+  }
+
   subscribe(fn: Listener): () => void {
     this.listeners.add(fn)
     return () => {
@@ -126,7 +132,14 @@ class GameStore {
   /** 通知订阅者（不写存档） */
   private emit(): void {
     this.version++
-    for (const fn of this.listeners) fn()
+    for (const fn of this.listeners) {
+      try {
+        fn()
+      } catch (e) {
+        // 单个 listener 异常不能中断其他 listener（否则会导致状态同步/睡觉流程卡死）
+        console.warn('store listener error', e)
+      }
+    }
   }
 
   /** 显示一条短暂的反馈消息 */
@@ -203,6 +216,7 @@ class GameStore {
   till(col: number, row: number): boolean {
     if (this.getFarmTile(col, row)) return false
     this.state.farmTiles.push({ col, row, watered: false })
+    this.farmVersion++
     this.advanceTime(ACTION_COST.till)
     return true
   }
@@ -221,6 +235,7 @@ class GameStore {
       stage: 0,
       plantedDay: this.state.day,
     })
+    this.farmVersion++
     this.advanceTime(ACTION_COST.plant)
     return true
   }
@@ -231,6 +246,7 @@ class GameStore {
     if (!this.getCrop(col, row)) return false
 
     tile.watered = true
+    this.farmVersion++
     this.advanceTime(ACTION_COST.water)
     return true
   }
@@ -246,6 +262,7 @@ class GameStore {
     )
     // 收获获得作物（金币通过商店出售获得）
     this.state.inventory[def.productItem] += 1
+    this.farmVersion++
 
     const tile = this.getFarmTile(col, row)
     if (tile) tile.watered = false
@@ -288,6 +305,7 @@ class GameStore {
       }
     }
     for (const tile of this.state.farmTiles) tile.watered = false
+    this.farmVersion++
   }
 
   // ---------- 场景切换 ----------

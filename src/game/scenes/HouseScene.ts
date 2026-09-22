@@ -142,7 +142,9 @@ export class HouseScene extends Phaser.Scene {
     )
 
     this.unsub = store.subscribe(() => {
-      this.cameras.main.setZoom(store.getState().zoom)
+      if (this.cameras?.main) {
+        this.cameras.main.setZoom(store.getState().zoom)
+      }
     })
   }
 
@@ -157,6 +159,11 @@ export class HouseScene extends Phaser.Scene {
   private handleKeyDown = (e: KeyboardEvent): void => {
     if (e.key === 'e' || e.key === 'E') {
       e.preventDefault()
+      if (!this.scene.isActive()) return
+      console.log('[INPUT] E PRESSED', {
+        sleeping: this.sleeping,
+        uiOpen: store.isUIOpen(),
+      })
       if (this.sleeping || store.isUIOpen()) return
       this.doInteract()
     }
@@ -271,7 +278,13 @@ export class HouseScene extends Phaser.Scene {
   }
 
   private doInteract(): void {
+    console.log('[INTERACTION] player', {
+      x: Math.floor(this.player.sprite.x / TILE_SIZE),
+      y: Math.floor(this.player.sprite.y / TILE_SIZE),
+      facing: this.player.facingDir,
+    })
     const target = this.findInteractTarget()
+    console.log('[INTERACTION] nearest target=', target ? target.interaction : 'none')
     if (!target) return
 
     if (target.interaction === 'sleep') {
@@ -286,6 +299,7 @@ export class HouseScene extends Phaser.Scene {
 
   private startSleep(): void {
     if (this.sleeping) return
+    console.log('[Sleep] START')
     this.sleeping = true
     this.sleepPhase = 'walk'
     this.sleepTimer = 0
@@ -302,11 +316,13 @@ export class HouseScene extends Phaser.Scene {
   }
 
   private updateSleep(delta: number): void {
+    if (!Number.isFinite(delta) || delta <= 0) return
     this.sleepTimer += delta
 
     switch (this.sleepPhase) {
       case 'walk':
         if (this.sleepTimer >= 450) {
+          console.log('[Sleep] WALK_COMPLETE -> PLAYER_ON_BED')
           this.lieDown()
           this.sleepPhase = 'fade-out'
           this.sleepTimer = 0
@@ -318,6 +334,7 @@ export class HouseScene extends Phaser.Scene {
         if (this.sleepTimer >= 2000) {
           this.sleepOverlay.alpha = 1
           this.goodnightText.setVisible(false)
+          console.log('[Sleep] NIGHT_FADE_COMPLETE -> ADVANCE_DAY')
           this.advanceDay()
           this.sleepPhase = 'black'
           this.sleepTimer = 0
@@ -325,6 +342,7 @@ export class HouseScene extends Phaser.Scene {
         break
       case 'black':
         if (this.sleepTimer >= 700) {
+          console.log('[Sleep] BLACK_END -> MORNING_FADE_START')
           this.dayText.setVisible(true)
           this.sleepPhase = 'fade-in'
           this.sleepTimer = 0
@@ -335,6 +353,7 @@ export class HouseScene extends Phaser.Scene {
         if (this.sleepTimer >= 1800) {
           this.sleepOverlay.alpha = 0
           this.dayText.setVisible(false)
+          console.log('[Sleep] MORNING_FADE_COMPLETE -> WAKE_START')
           this.sitUp()
           this.sleepPhase = 'wake'
           this.sleepTimer = 0
@@ -342,10 +361,20 @@ export class HouseScene extends Phaser.Scene {
         break
       case 'wake':
         if (this.sleepTimer >= 450) {
+          console.log('[Sleep] WAKE_COMPLETE -> INPUT_ENABLED')
           this.finishWake()
           this.sleeping = false
           this.sleepPhase = 'idle'
         }
+        break
+      default:
+        // 异常状态，强制恢复，避免永久冻结
+        console.warn('[Sleep] UNKNOWN_PHASE, force reset:', this.sleepPhase)
+        this.sleepOverlay.alpha = 0
+        this.goodnightText.setVisible(false)
+        this.dayText.setVisible(false)
+        this.sleeping = false
+        this.sleepPhase = 'idle'
         break
     }
   }
@@ -354,6 +383,7 @@ export class HouseScene extends Phaser.Scene {
     this.player.sprite.setTexture('player-sleep')
     this.player.sprite.setFlipX(false)
     this.player.sprite.setPosition(BED_CENTER_X, BED_LYING_Y)
+    console.log('[Sleep] PLAYER_ON_BED at', BED_CENTER_X, BED_LYING_Y)
   }
 
   private advanceDay(): void {
@@ -361,17 +391,20 @@ export class HouseScene extends Phaser.Scene {
     store.endDay()
     const state = store.getState()
     this.dayText.setText(`Day ${state.day}\n早晨`)
+    console.log('[Sleep] ADVANCE_DAY -> DAY =', state.day)
   }
 
   private sitUp(): void {
     this.player.sprite.setTexture('player-sit')
     this.player.sprite.setPosition(BED_CENTER_X, BED_LYING_Y + 16)
+    console.log('[Sleep] SIT_UP')
   }
 
   private finishWake(): void {
     this.player.sprite.setTexture('player-down-0')
     this.player.sprite.setFlipX(false)
     this.player.sprite.setPosition(BED_CENTER_X, BED_APPROACH_Y)
+    console.log('[Sleep] WAKE_POSITION at', BED_CENTER_X, BED_APPROACH_Y)
 
     store.updatePlayer(this.player.sprite.x, this.player.sprite.y, 'up')
     store.persist()
