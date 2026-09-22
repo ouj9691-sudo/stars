@@ -1,0 +1,35 @@
+:root {
+  --bg-dark: #1c2b16;
+  --bg-mid: #263a1e;
+  --panel: #4a3420;
+  --panel-border: #6b4a2a;
+  --panel-light: #5a4228;
+  --accent: #f0c55a;
+  --accent-dim: #e0b54a;
+  --text: #f5ead0;
+  --text-dim: #cbb990;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Press Start 2P', 'Microsoft YaHei', 'Courier New', monospace;
+  color: var(--text);
+  background: var(--bg-dark);
+  -webkit-font-smoothing: none;
+}
+
+canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
